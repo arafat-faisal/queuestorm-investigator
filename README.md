@@ -1,13 +1,23 @@
 # QueueStorm Investigator
 
-QueueStorm Investigator is an evidence-grounded fintech support ticket analysis API built for the SUST CSE Carnival 2026 Codex Community Hackathon Online Preliminary Round.
+QueueStorm Investigator is an evidence-grounded fintech support ticket analysis API built for the **SUST CSE Carnival 2026 Codex Community Hackathon Online Preliminary Round**.
 
 The service receives a customer complaint and recent transaction history, then returns a structured JSON response containing the relevant transaction, evidence verdict, case type, severity, department routing, support-agent summary, recommended next action, customer-safe reply, and human-review decision.
 
 ## Team
 
-- Team Name: Data Divas
-- Team Leader: Md. Arafat Hossain Faisal
+- **Team Name:** Data Divas
+- **Team Leader:** Md. Arafat Hossain Faisal
+- **Member 1:** Faysal Ahmed Rudro
+- **Member 2:** Umme Salma Zimia
+
+## Live Submission
+
+- **Public Base URL:** `https://queuestorm-investigator-x223.onrender.com`
+- **Health Endpoint:** `https://queuestorm-investigator-x223.onrender.com/health`
+- **Analyze Endpoint:** `https://queuestorm-investigator-x223.onrender.com/analyze-ticket`
+- **GitHub Repository:** `https://github.com/arafat-faisal/queuestorm-investigator.git`
+- **Submission Path:** Live URL + Docker fallback
 
 ## Problem Objective
 
@@ -43,7 +53,7 @@ Accepts a JSON ticket and returns a structured analysis response.
 - FastAPI
 - Pydantic
 - Uvicorn
-- Rule-based deterministic reasoning engine
+- Deterministic rule-based reasoning engine
 
 ## Run Locally
 
@@ -81,7 +91,7 @@ python run.py
 
 Default port is `8000`.
 
-You can also run manually:
+Manual Uvicorn command:
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -98,7 +108,7 @@ APP_ENV=production
 
 No real secrets are required for this implementation.
 
-## Docker Run
+## Docker Fallback
 
 ### Build
 
@@ -172,16 +182,26 @@ The engine performs:
 - Complaint normalization for English, Bangla, Banglish, mixed text, emojis, and noisy characters
 - Amount extraction from English and Bangla digits
 - Case-type detection using multilingual keyword signals
-- Transaction matching by amount and transaction pattern
+- Transaction matching by amount, transaction type, and transaction status
 - Duplicate payment detection
-- Evidence verdict assignment:
-  - `consistent`
-  - `inconsistent`
-  - `insufficient_data`
+- Evidence verdict assignment: `consistent`, `inconsistent`, or `insufficient_data`
 - Department routing
 - Severity assignment
 - Human-review decision
 - Safety post-processing for customer replies
+
+### Evidence Matching Upgrade
+
+When multiple transactions share the same amount, the engine uses case-aware transaction type and status preferences:
+
+- `wrong_transfer` prefers `transfer` + `completed`
+- `payment_failed` prefers `payment` + `failed/pending`
+- `refund_request` prefers `payment/refund`
+- `duplicate_payment` prefers repeated completed payments
+- `merchant_settlement_delay` prefers `settlement`
+- `agent_cash_in_issue` prefers `cash_in`
+
+This reduces wrong transaction selection in ambiguous hidden cases.
 
 ## Supported Case Types
 
@@ -200,24 +220,30 @@ The system applies strict fintech safety guardrails:
 
 - Never asks customers for PIN, OTP, password, or full card number
 - Never promises refund, reversal, account unblock, or recovery without authority
-- Uses safe wording such as: “Any eligible amount will be returned through official channels”
-- Routes phishing/social-engineering cases to fraud risk
+- Uses safe wording such as: "Any eligible amount will be returned through official channels"
+- Routes phishing/social-engineering cases to `fraud_risk`
 - Ignores prompt-injection instructions embedded inside customer complaints
 - Adds credential safety reminders to customer-facing replies
 
+## MODELS
+
+No external AI model, LLM API, paid API, or local machine learning model is used.
+
+The solution uses a deterministic rule-based reasoning engine that runs inside the FastAPI backend.
+
+Reason for this choice:
+
+- No API key or quota risk
+- Very low latency
+- Fully reproducible
+- Strong schema control
+- Safer fintech guardrails
+- No third-party service dependency during judging
+- The task is designed to be solvable without paid APIs
+
 ## AI / Model Usage
 
-No external AI model or paid API is used.
-
-Reason:
-
-- Lower latency
-- No API key or quota risk
-- No external dependency during judging
-- Full control over safety and schema
-- Better reproducibility
-
-The task is handled through deterministic rules and evidence-based transaction investigation.
+No external AI model or paid API is used. The task is handled through deterministic rules and evidence-based transaction investigation.
 
 ## Testing
 
@@ -280,23 +306,36 @@ Current result:
 
 ```text
 All reliability checks passed.
-30 rapid requests: 0 failures
-Average latency: ~0.002s
-Max latency: ~0.012s
+30 rapid requests: 0 failures.
+Average latency: ~0.002s.
+Max latency: ~0.012s.
+```
+
+### Deep contest stress test
+
+A final local deep stress test was also used to validate additional edge cases beyond the public sample pack.
+
+Current result:
+
+```text
+Total tests: 448
+Passed: 448
+Failed: 0
+Pass rate: 100.0%
 ```
 
 ## Known Limitations
 
-- The system is rule-based, so extremely unusual wording may require additional keyword expansion.
+- The system is rule-based, so extremely unusual wording may require future keyword expansion.
+- Time-based transaction matching is lightweight; amount/type/status matching is prioritized.
 - It does not connect to real payment systems.
-- It does not perform real refund, reversal, settlement, or account actions.
-- It only investigates based on the provided synthetic transaction history.
-- Time-based matching is currently lightweight; amount/type/pattern matching is prioritized.
+- It does not perform real refunds, reversals, settlements, or account actions.
+- It only investigates based on the synthetic complaint and transaction history provided in each request.
 
 ## Repository Safety
 
 - No real customer data is used.
-- No payment API integration is included.
+- No real payment API integration is included.
 - No secrets or API keys are required.
 - `.env.example` contains placeholders only.
 
@@ -308,4 +347,4 @@ Preferred submission path:
 2. GitHub repository URL
 3. Docker fallback with documented run command
 
-If live deployment fails, the project can be evaluated using Docker or local runbook.
+If the live deployment becomes unavailable, the project can be evaluated using Docker or the local runbook above.
