@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from app.schemas import AnalyzeTicketRequest, AnalyzeTicketResponse
 from app.safety import safe_customer_reply
 
@@ -31,13 +31,30 @@ def extract_amounts(text: str) -> List[float]:
     """
     Extract simple numeric amounts from English/Bangla-mixed text.
     Handles digits like 5000, 1,200, ২০০০ partially via Bengali digit map.
+    Also handles multipliers like 5k, 5 hazar, 1.5 lakh.
     """
     bangla_digit_map = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
     text = text.translate(bangla_digit_map)
     text = text.replace(",", "")
+    text = text.lower()
 
-    nums = re.findall(r"\b\d+(?:\.\d+)?\b", text)
-    return [float(n) for n in nums]
+    pattern = r"(?<![\d\.a-zA-Z])(\d+(?:\.\d+)?)\s*(k|m|hazar|lakh|হাজার|লাখ|thousand|million)?"
+    matches = re.finditer(pattern, text)
+    
+    nums = []
+    for match in matches:
+        val = float(match.group(1))
+        multiplier_str = match.group(2)
+        if multiplier_str:
+            if multiplier_str in ["k", "hazar", "হাজার", "thousand"]:
+                val *= 1000
+            elif multiplier_str in ["m", "lakh", "লাখ"]:
+                if multiplier_str in ["lakh", "লাখ"]:
+                    val *= 100000
+                else:
+                    val *= 1000000
+        nums.append(val)
+    return nums
 
 
 def has_any(text: str, keywords: List[str]) -> bool:
@@ -52,40 +69,43 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
         # English
         "otp", "pin", "password", "scam", "fraud", "phishing",
         "called me", "sms", "account will be blocked", "blocked if",
-        "verification code", "security code",
+        "verification code", "security code", "lottery", "prize", "cashback",
 
         # Bangla
         "ওটিপি", "পিন", "পাসওয়ার্ড", "পাসওয়ার্ড", "প্রতারক", "প্রতারণা",
-        "ব্লক", "অ্যাকাউন্ট বন্ধ", "একাউন্ট বন্ধ",
+        "ব্লক", "অ্যাকাউন্ট বন্ধ", "একাউন্ট বন্ধ", "লটারি", "ভেরিফিকেশন",
 
         # Banglish
         "otp dise", "otp chay", "otp chai", "pin chay", "pin chai",
         "password chay", "password chai", "bkash theke bolse",
         "account block", "account bondho", "fraud call", "scam call",
-        "called and said", "asked me to call", "call them back"
+        "called and said", "asked me to call", "call them back",
+        "phone korechilo", "bolchilo", "verify korte", "link pathaise",
+        "lotary", "purshkar", "cashback jitchen"
     ]
 
     wrong_transfer_keywords = [
         # English
         "wrong number", "wrong person", "wrong recipient", "mistake",
         "typed it wrong", "sent to wrong", "wrongly sent", "accidentally",
-        "stranger",
+        "stranger", "other number", "other person",
 
         # Bangla
         "ভুল নম্বর", "ভুল করে", "ভুল মানুষ", "ভুলে", "ভুল ব্যক্তিকে",
-        "ভুল নাম্বার",
+        "ভুল নাম্বার", "অন্য নম্বর", "অন্য একাউন্ট",
 
         # Banglish
         "vul number", "bhul number", "vul kore", "bhul kore",
         "wrong e pathaisi", "vul manush", "bhul manush",
-        "vul recipient", "bhul recipient"
+        "vul recipient", "bhul recipient", "onno number", "onno manush",
+        "bhul account", "vul account"
     ]
 
     failed_payment_keywords = [
         # English
         "failed", "balance deducted", "deducted", "payment failed",
         "app showed failed", "transaction failed", "money deducted",
-        "went wrong with a payment", "payment went wrong",
+        "went wrong with a payment", "payment went wrong", "amount deducted",
 
         # Bangla
         "ফেইল", "ফেল", "ব্যর্থ", "ব্যালেন্স কেটে", "টাকা কেটে",
@@ -93,7 +113,8 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
 
         # Banglish
         "fail hoise", "failed hoise", "payment fail", "taka kete niche",
-        "balance kete niche", "money kete niche", "transaction fail"
+        "balance kete niche", "money kete niche", "transaction fail",
+        "katlo keno", "tk katse"
     ]
 
     refund_keywords = [
@@ -112,28 +133,17 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
     cash_in_keywords = [
         # English
         "cash in", "cash-in", "agent", "balance not", "not reflected",
-        "cashin",
-
-        # Bangla
-        "ক্যাশ ইন", "ক্যাশইন", "এজেন্ট", "ব্যালেন্সে টাকা আসেনি",
-        "টাকা আসেনি", "জমা হয়নি", "জমা হয়নি",
-
-        # Banglish
-        "cash in korechi", "cashin korechi", "agent er kache",
-        "balance e ashe nai", "balance aseni", "taka ashe nai",
-        "tk ashe nai", "joma hoy nai", "joma hoyni"
+        "cash in", "cash-in", "cash in korechi", "cashin korechi",
+        "agent er kache", "balance e ashe nai", "balance aseni",
+        "taka ashe nai", "tk ashe nai", "joma hoy nai", "joma hoyni",
+        "ক্যাশ ইন", "ক্যাশইন", "এজেন্ট", "agent point", "dokan theke", "দোকান থেকে"
     ]
 
     settlement_keywords = [
-        # English
-        "settlement", "settled", "sales", "not settled",
-
-        # Bangla
-        "সেটেলমেন্ট", "মার্চেন্ট", "বিক্রির টাকা", "সেলস",
-
-        # Banglish
-        "settlement hoy nai", "settlement ashe nai", "merchant taka",
-        "sales er taka", "settle hoyni"
+        "settlement", "settle", "settlement hoy nai", "settlement ashe nai",
+        "merchant taka", "sales er taka", "settle hoyni", "সেটেলমেন্ট",
+        "মার্চেন্ট", "বিক্রির টাকা", "babsar taka", "bebsar taka", "business taka",
+        "byabsar taka", "ব্যবসার টাকা", "দোকানের টাকা", "dokaner taka", "সেলস"
     ]
 
     duplicate_keywords = [
@@ -365,7 +375,31 @@ def detect_duplicate_transaction(payload: AnalyzeTicketRequest) -> Optional[Any]
     return None
 
 
-def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str):
+def find_single_type_match_without_amount(payload: AnalyzeTicketRequest, case_type: str):
+    amounts = extract_amounts(payload.complaint)
+    txns = payload.transaction_history or []
+
+    if amounts or not txns:
+        return None
+
+    prefs = expected_transaction_preferences(case_type)
+    preferred_types = prefs.get("types", [])
+
+    if not preferred_types:
+        return None
+
+    candidates = [
+        txn for txn in txns
+        if txn.type in preferred_types
+    ]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    return None
+
+
+def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str) -> Tuple[Optional[Any], str, List[str]]:
     txns = payload.transaction_history or []
 
     if not txns:
@@ -381,6 +415,7 @@ def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str):
         return None, "insufficient_data", ["duplicate_claim_no_clear_pair"]
 
     amount_match = find_amount_match(payload, case_type)
+    single_type_match = find_single_type_match_without_amount(payload, case_type)
 
     if amount_match:
         # Basic contradiction rule for wrong transfer:
@@ -402,6 +437,15 @@ def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str):
             return amount_match, "inconsistent", ["status_contradiction_settled"]
 
         return amount_match, "consistent", ["amount_transaction_match"]
+
+    if single_type_match:
+        if case_type == "payment_failed" and single_type_match.status == "completed":
+            return single_type_match, "inconsistent", ["single_type_match_without_amount", "status_contradiction_completed"]
+
+        if case_type == "merchant_settlement_delay" and single_type_match.status == "completed":
+            return single_type_match, "inconsistent", ["single_type_match_without_amount", "status_contradiction_settled"]
+
+        return single_type_match, "consistent", ["single_type_match_without_amount"]
 
     # If multiple same amount transactions exist, avoid guessing.
     amounts = extract_amounts(payload.complaint)
@@ -478,10 +522,18 @@ def build_texts(
         if case_type in ["payment_failed", "duplicate_payment"]:
             customer_reply += " Any eligible amount will be returned through official channels."
 
+        if evidence_verdict == "consistent":
+            ev_desc = "Transaction details match the complaint."
+        elif evidence_verdict == "inconsistent":
+            ev_desc = "Transaction details contradict the complaint."
+        else:
+            ev_desc = "No matching transaction could be verified."
+
+        formatted_case = "an uncategorized issue" if case_type == "other" else f"a {case_type.replace('_', ' ')}"
         agent_summary = (
-            f"Customer complaint classified as {case_type}. "
-            f"Evidence verdict is {evidence_verdict}. "
-            f"Relevant transaction: {txn_id or 'not identified'}."
+            f"Customer reported {formatted_case}. "
+            f"Evidence review: {ev_desc} "
+            f"Relevant transaction: {txn_id or 'none'}."
         )
 
         recommended_next_action = (
@@ -508,7 +560,6 @@ def requires_human_review(case_type: str, severity: str, evidence_verdict: str) 
         return True
 
     # Payment failed and merchant settlement can be handled by ops without mandatory human review
-    # if evidence is clear.
     if case_type in ["payment_failed", "merchant_settlement_delay"]:
         return False
 
@@ -538,7 +589,16 @@ def analyze(payload: AnalyzeTicketRequest) -> AnalyzeTicketResponse:
         reason_codes=reason_codes,
     )
 
-    confidence = 0.9 if evidence_verdict == "consistent" else 0.7 if evidence_verdict == "inconsistent" else 0.55
+    if case_type == "phishing_or_social_engineering":
+        confidence = 0.95
+    elif evidence_verdict == "consistent":
+        confidence = 0.95
+    elif evidence_verdict == "insufficient_data":
+        confidence = 0.55
+    elif evidence_verdict == "inconsistent":
+        confidence = 0.35
+    else:
+        confidence = 0.50
 
     return AnalyzeTicketResponse(
         ticket_id=payload.ticket_id,
