@@ -161,11 +161,11 @@ curl http://127.0.0.1:8000/health
   "case_type": "wrong_transfer",
   "severity": "high",
   "department": "dispute_resolution",
-  "agent_summary": "Customer complaint classified as wrong_transfer. Evidence verdict is consistent. Relevant transaction: TXN-9101.",
+  "agent_summary": "Customer reported a wrong transfer. Evidence review: Transaction details match the complaint. Relevant transaction: TXN-9101.",
   "recommended_next_action": "Route to dispute_resolution. Review the complaint and transaction evidence before taking any financial action.",
   "customer_reply": "We have noted your concern regarding transaction TXN-9101. Our dispute resolution team will review the case and contact you through official support channels. Please do not share your PIN or OTP with anyone.",
   "human_review_required": true,
-  "confidence": 0.9,
+  "confidence": 0.95,
   "reason_codes": [
     "wrong_transfer",
     "amount_transaction_match"
@@ -180,7 +180,7 @@ This project uses a deterministic rule-based investigator engine instead of rely
 The engine performs:
 
 - Complaint normalization for English, Bangla, Banglish, mixed text, emojis, and noisy characters
-- Amount extraction from English and Bangla digits
+- Amount extraction from English and Bangla digits, including compact expressions such as `5k`, `5 hazar`, and `1.5 lakh`
 - Case-type detection using multilingual keyword signals
 - Transaction matching by amount, transaction type, and transaction status
 - Duplicate payment detection
@@ -202,6 +202,10 @@ When multiple transactions share the same amount, the engine uses case-aware tra
 - `agent_cash_in_issue` prefers `cash_in`
 
 This reduces wrong transaction selection in ambiguous hidden cases.
+
+### Contradiction Handling Upgrade
+
+If a complaint mentions no amount but the transaction history contains exactly one transaction of the expected type, the engine can use that transaction as the likely relevant transaction. This allows the system to detect contradictions such as a customer saying a payment failed while the only relevant payment transaction is marked completed.
 
 ## Supported Case Types
 
