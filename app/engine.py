@@ -61,13 +61,15 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
         # Banglish
         "otp dise", "otp chay", "otp chai", "pin chay", "pin chai",
         "password chay", "password chai", "bkash theke bolse",
-        "account block", "account bondho", "fraud call", "scam call"
+        "account block", "account bondho", "fraud call", "scam call",
+        "called and said", "asked me to call", "call them back"
     ]
 
     wrong_transfer_keywords = [
         # English
         "wrong number", "wrong person", "wrong recipient", "mistake",
-        "typed it wrong", "sent to wrong", "wrongly sent",
+        "typed it wrong", "sent to wrong", "wrongly sent", "accidentally",
+        "stranger",
 
         # Bangla
         "ভুল নম্বর", "ভুল করে", "ভুল মানুষ", "ভুলে", "ভুল ব্যক্তিকে",
@@ -83,6 +85,7 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
         # English
         "failed", "balance deducted", "deducted", "payment failed",
         "app showed failed", "transaction failed", "money deducted",
+        "went wrong with a payment", "payment went wrong",
 
         # Bangla
         "ফেইল", "ফেল", "ব্যর্থ", "ব্যালেন্স কেটে", "টাকা কেটে",
@@ -159,11 +162,12 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
             # English normal
             "didn't get", "did not get", "not received", "didn't receive",
             "not get it", "hasn't received", "doesn't receive",
-            "did not receive", "not receive",
+            "did not receive", "not receive", "didn't reach", "did not reach",
+            "not reach",
 
             # English after punctuation normalization
             "didn t get", "didn t receive", "hasn t received",
-            "doesn t receive", "doesn t get",
+            "doesn t receive", "doesn t get", "didn t reach",
 
             # More simple English variants
             "he did not get", "she did not get", "he didn t get",
@@ -183,6 +187,11 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
     if has_any(text, duplicate_keywords):
         return "duplicate_payment"
 
+    # Explicit merchant user or settlement terms should route to merchant settlement.
+    # Evaluating before payment_failed handles "settlement failed" properly.
+    if user_type == "merchant" or has_any(text, settlement_keywords):
+        return "merchant_settlement_delay"
+
     # Failed payment should outrank generic refund wording because users often say "refund"
     # after a failed payment with deducted balance.
     if has_any(text, failed_payment_keywords):
@@ -193,11 +202,6 @@ def detect_case_type(payload: AnalyzeTicketRequest) -> str:
 
     if has_any(text, wrong_transfer_keywords) or transfer_not_received:
         return "wrong_transfer"
-
-    # Explicit merchant user or settlement terms should route to merchant settlement.
-    # But generic "merchant" inside a refund complaint should not override refund_request.
-    if user_type == "merchant" or has_any(text, settlement_keywords):
-        return "merchant_settlement_delay"
 
     if has_any(text, refund_keywords):
         return "refund_request"
@@ -390,6 +394,12 @@ def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str):
             ]
             if len(same_counterparty_completed) >= 3:
                 return amount_match, "inconsistent", ["established_recipient_pattern"]
+
+        if case_type == "payment_failed" and amount_match.status == "completed":
+            return amount_match, "inconsistent", ["status_contradiction_completed"]
+
+        if case_type == "merchant_settlement_delay" and amount_match.status == "completed":
+            return amount_match, "inconsistent", ["status_contradiction_settled"]
 
         return amount_match, "consistent", ["amount_transaction_match"]
 
