@@ -226,6 +226,73 @@ TEST_CASES = [
             "human_review_required": False,
         },
     },
+    {
+        "name": "Same amount transfer and cash-in should pick transfer",
+        "input": {
+            "ticket_id": "HID-009",
+            "complaint": "I sent 3000 taka to wrong number",
+            "language": "en",
+            "user_type": "customer",
+            "transaction_history": [
+                {
+                    "transaction_id": "HTXN-009A",
+                    "timestamp": "2026-04-14T09:00:00Z",
+                    "type": "cash_in",
+                    "amount": 3000,
+                    "counterparty": "AGENT-111",
+                    "status": "completed",
+                },
+                {
+                    "transaction_id": "HTXN-009B",
+                    "timestamp": "2026-04-14T10:00:00Z",
+                    "type": "transfer",
+                    "amount": 3000,
+                    "counterparty": "+8801712345678",
+                    "status": "completed",
+                },
+            ],
+        },
+        "expect": {
+            "case_type": "wrong_transfer",
+            "department": "dispute_resolution",
+            "evidence_verdict": "consistent",
+            "relevant_transaction_id": "HTXN-009B",
+        },
+    },
+    {
+        "name": "Same amount failed payment and transfer should pick failed payment",
+        "input": {
+            "ticket_id": "HID-010",
+            "complaint": "Payment failed but 1200 taka balance deducted",
+            "language": "en",
+            "user_type": "customer",
+            "transaction_history": [
+                {
+                    "transaction_id": "HTXN-010A",
+                    "timestamp": "2026-04-14T09:00:00Z",
+                    "type": "transfer",
+                    "amount": 1200,
+                    "counterparty": "+8801812345678",
+                    "status": "completed",
+                },
+                {
+                    "transaction_id": "HTXN-010B",
+                    "timestamp": "2026-04-14T09:05:00Z",
+                    "type": "payment",
+                    "amount": 1200,
+                    "counterparty": "MERCHANT-MOBILE-OP",
+                    "status": "failed",
+                },
+            ],
+        },
+        "expect": {
+            "case_type": "payment_failed",
+            "department": "payments_ops",
+            "evidence_verdict": "consistent",
+            "relevant_transaction_id": "HTXN-010B",
+            "human_review_required": False,
+        },
+    },
 ]
 
 

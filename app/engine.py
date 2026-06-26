@@ -247,14 +247,53 @@ def severity_for(case_type: str, amount: Optional[float] = None, evidence_verdic
     return "medium"
 
 
-def find_amount_match(payload: AnalyzeTicketRequest):
+def expected_transaction_preferences(case_type: str):
+    """
+    Returns preferred transaction types and statuses for each case type.
+    This improves evidence matching when multiple transactions share the same amount.
+    """
+    preferences = {
+        "wrong_transfer": {
+            "types": ["transfer"],
+            "statuses": ["completed"]
+        },
+        "payment_failed": {
+            "types": ["payment"],
+            "statuses": ["failed", "pending"]
+        },
+        "refund_request": {
+            "types": ["payment", "refund"],
+            "statuses": ["completed", "pending", "reversed"]
+        },
+        "duplicate_payment": {
+            "types": ["payment"],
+            "statuses": ["completed"]
+        },
+        "merchant_settlement_delay": {
+            "types": ["settlement"],
+            "statuses": ["pending"]
+        },
+        "agent_cash_in_issue": {
+            "types": ["cash_in"],
+            "statuses": ["pending", "completed"]
+        },
+        "other": {
+            "types": [],
+            "statuses": []
+        }
+    }
+
+    return preferences.get(case_type, {"types": [], "statuses": []})
+
+
+def find_amount_match(payload: AnalyzeTicketRequest, case_type: str):
     amounts = extract_amounts(payload.complaint)
     txns = payload.transaction_history or []
 
     if not amounts or not txns:
         return None
 
-    # Deduplicate repeated mentioned amounts like:
+    # Deduplicate repeated amount mentions like:
     # "I paid 500 ... refund my 500 taka"
     unique_amounts = list(set(amounts))
 
@@ -267,9 +306,39 @@ def find_amount_match(payload: AnalyzeTicketRequest):
 
     matches = list(matched_by_id.values())
 
+    if not matches:
+        return None
+
     if len(matches) == 1:
         return matches[0]
 
+    prefs = expected_transaction_preferences(case_type)
+    preferred_types = prefs.get("types", [])
+    preferred_statuses = prefs.get("statuses", [])
+
+    # Prefer expected transaction type for the detected case.
+    type_filtered = [
+        txn for txn in matches
+        if not preferred_types or txn.type in preferred_types
+    ]
+
+    if len(type_filtered) == 1:
+        return type_filtered[0]
+
+    if len(type_filtered) > 1:
+        # Then prefer expected status.
+        status_filtered = [
+            txn for txn in type_filtered
+            if not preferred_statuses or txn.status in preferred_statuses
+        ]
+
+        if len(status_filtered) == 1:
+            return status_filtered[0]
+
+        # If still multiple, do not guess.
+        return None
+
+    # If preferences do not help, do not guess.
     return None
 
 
@@ -307,7 +376,7 @@ def select_relevant_transaction(payload: AnalyzeTicketRequest, case_type: str):
             return dup, "consistent", ["duplicate_payment_detected"]
         return None, "insufficient_data", ["duplicate_claim_no_clear_pair"]
 
-    amount_match = find_amount_match(payload)
+    amount_match = find_amount_match(payload, case_type)
 
     if amount_match:
         # Basic contradiction rule for wrong transfer:
